@@ -64,7 +64,7 @@ httpreq *parse_http(char *str) {
   char *url = "";
   char *token;
   httpreq *req;
-  
+
   req = malloc(sizeof(httpreq));
   if (req == NULL) {
     fprintf(stderr, "failed to allocate memory");
@@ -92,12 +92,53 @@ httpreq *parse_http(char *str) {
   return req;
 }
 
+void http_header(int c, int status) {
+  char buf[512];
+  int n;
+  snprintf(buf, 511,
+           "HTTP/1.x %d OK\n"
+           "Server: httpd.c\n"
+           "Cache-Cantrol: no-store, no-cache, max-age=0, private\n"
+           "Content-Language: en\n"
+           "X-Frame-Options: SAMEORIGIN\n",
+           status);
+  n = strlen(buf);
+  write(c, buf, n);
+}
+
+void http_response(int c, char *contentType, char *res) {
+  char buf[512];
+  int n;
+  n = strlen(res);
+  snprintf(buf, 511,
+           "Content-Type: %s\n"
+           "Content-Length: %d\n"
+           "\n%s\n",
+           contentType, n, res);
+  n = strlen(buf);
+  write(c, buf, n);
+
+  return;
+}
+
 void client_connect(int s, int c) {
   char buf[512];
+  char *res;
   read(c, buf, 511);
   httpreq *p = parse_http(buf);
   printf("%s\n", p->method);
   printf("%s\n", p->url);
+
+  if (!strcmp(p->method, "GET") && !strcmp(p->url, "/app/webpage")) {
+    res = "<html>Hello World!</html>";
+    http_header(c, 200);
+    http_response(c, "text/html", res);
+  } else {
+    res = "File not found";
+    http_header(c, 400);
+    http_response(c, "text/plain", res);
+  }
+  return;
 }
 
 int main(int argc, char **argv) {
