@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #define IP "127.0.0.1"
@@ -13,6 +14,12 @@ typedef struct HttpRequest {
   char method[8];
   char url[256];
 } httpreq;
+
+// File structure
+typedef struct File {
+  char *buf;
+  int size;
+} sfile;
 
 /*  Socket Initialization with port. Returns -1 on error or it returns a socket
  * fd */
@@ -121,13 +128,52 @@ void http_response(int c, char *contentType, char *res) {
   return;
 }
 
+char *readFile(int c) {
+  char *buf;
+  FILE *file = fopen("index.html", "r");
+  if (!file) {
+    const char res[] = "HTTP/1.1 404 Not Found\n";
+    send(c, res, sizeof(res), 0);
+  } else {
+    fseek(file, 0, SEEK_END);
+    long size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    buf = (char *)malloc(size);
+    int i = 0;
+    char ch;
+    while ((ch = fgetc(file)) != EOF) {
+      buf[i] = ch;
+      i++;
+    }
+  }
+  fclose(file);
+  return buf;
+}
+
 void client_connect(int s, int c) {
   char buf[512];
   char *res;
   read(c, buf, 511);
   httpreq *p = parse_http(buf);
+  if (!p) {
+    perror("Error in parsing http req");
+    close(c);
+    free(p);
+    exit(EXIT_FAILURE);
+  }
+
   printf("%s\n", p->method);
   printf("%s\n", p->url);
+
+  if (!strcmp(p->method, "GET") && !strncmp(p->url, "/index.html", 11)) {
+    char *res_data = readFile(c);
+    http_header(c, 200);
+    http_response(c, "text/html", res_data);
+  } else {
+    res = "File not found";
+    http_header(c, 400);
+    http_response(c, "text/plain", res);
+  }
 
   if (!strcmp(p->method, "GET") && !strcmp(p->url, "/app/webpage")) {
     res = "<html>Hello World!</html>";
@@ -138,7 +184,9 @@ void client_connect(int s, int c) {
     http_header(c, 400);
     http_response(c, "text/plain", res);
   }
-  return;
+
+  free(p);
+  close(c);
 }
 
 int main(int argc, char **argv) {
